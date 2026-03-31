@@ -20,7 +20,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -298,14 +297,6 @@ public class StreamsBuilderFactoryBean extends AbstractFactoryBean<StreamsBuilde
 	}
 
 	/**
-	 * Get groupProtocol defined for this {@link StreamsBuilderFactoryBean}.
-	 * @return groupProtocol returns {@link GroupProtocol} value defined for this {@link StreamsBuilderFactoryBean}
-	 */
-	public @Nullable GroupProtocol getGroupProtocol() {
-		return this.groupProtocol;
-	}
-
-	/**
 	 * Get a managed by this {@link StreamsBuilderFactoryBean} {@link KafkaStreams} instance.
 	 * @return KafkaStreams managed instance;
 	 * may be null if this {@link StreamsBuilderFactoryBean} hasn't been started.
@@ -388,9 +379,15 @@ public class StreamsBuilderFactoryBean extends AbstractFactoryBean<StreamsBuilde
 				try {
 					Assert.state(this.properties != null,
 							"streams configuration properties must not be null");
-					if (this.getGroupProtocol() != null) {
+					if (this.groupProtocol != null) {
+						if (this.properties.containsKey(ConsumerConfig.GROUP_PROTOCOL_CONFIG) &&
+								!this.properties.get(ConsumerConfig.GROUP_PROTOCOL_CONFIG).equals(this.groupProtocol)) {
+							LOGGER.warn(String.format("Property `group.protocol=%s` will be overridden by %s " +
+											"defined in StreamsBuilderFactoryBean group protocol",
+									this.properties.get(ConsumerConfig.GROUP_PROTOCOL_CONFIG), this.groupProtocol));
+						}
 						this.properties.setProperty(ConsumerConfig.GROUP_PROTOCOL_CONFIG,
-								this.getGroupProtocol().name().toLowerCase(Locale.ROOT));
+								this.groupProtocol.name().toLowerCase());
 					}
 					this.kafkaStreams = this.kafkaStreamsCustomizer.initKafkaStreams(
 							this.topology, this.properties, this.clientSupplier
