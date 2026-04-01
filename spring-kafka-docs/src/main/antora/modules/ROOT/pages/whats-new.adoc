@@ -53,6 +53,7 @@ The provided exception handlers support multiple Kafka Streams DLQ enabling stra
 - The `setDeadLetterTopicName()` method of the xref:streams.adoc#dead-letter-queue-topic-name-property[`StreamsBuilderFactoryBean`].
 
 `RecoveringDeserializationExceptionHandler.KSTREAM_DESERIALIZATION_RECOVERER` has been deprecated in favor of `RecoveringDeserializationExceptionHandler.RECOVERER` to align with the new handlers properties.
+
 [[x41-kafka-streams-group-protocol]]
 === Kafka Streams Group Protocol Configuration
 

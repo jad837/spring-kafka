@@ -134,7 +134,7 @@ public class StreamsBuilderFactoryBeanTests {
 		StreamsBuilder streamsBuilder = streamsBuilderFactoryBean.getObject();
 		verify(streamsBuilder).build(kafkaStreamsConfiguration.asProperties());
 		assertThat(streamsBuilderFactoryBean.getStreamsConfiguration())
-				.containsEntry(ConsumerConfig.GROUP_PROTOCOL_CONFIG, testGroupProtocol.name().toLowerCase(Locale.ROOT));
+				.containsEntry(ConsumerConfig.GROUP_PROTOCOL_CONFIG, testGroupProtocol.name().toLowerCase());
 		// Need to remove group protocol config to ensure other tests not get affected
 		// due to pattern usage with streams group protocol
 		kafkaStreamsConfiguration.asProperties().remove(ConsumerConfig.GROUP_PROTOCOL_CONFIG);
