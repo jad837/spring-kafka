@@ -34,6 +34,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.ShareConsumer;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.Uuid;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -737,4 +738,90 @@ public class ShareKafkaMessageListenerContainerUnitTests {
 			executor.destroy();
 		}
 	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void shouldExposeClientInstanceIds() {
+		ShareConsumer<String, String> firstConsumer = mock(ShareConsumer.class);
+		ShareConsumer<String, String> secondConsumer = mock(ShareConsumer.class);
+
+		Uuid uuid1 = Uuid.randomUuid();
+		Uuid uuid2 = Uuid.randomUuid();
+
+		given(this.shareConsumerFactory.getConfigurationProperties()).willReturn(Map.of());
+		given(this.shareConsumerFactory.createShareConsumer(any(), eq("testContainer-0"), any()))
+				.willReturn(firstConsumer);
+		given(this.shareConsumerFactory.createShareConsumer(any(), eq("testContainer-1"), any()))
+				.willReturn(secondConsumer);
+
+		lenient().when(firstConsumer.poll(any())).thenAnswer(invocation -> {
+			Thread.sleep(50);
+			return null;
+		});
+		lenient().when(secondConsumer.poll(any())).thenAnswer(invocation -> {
+			Thread.sleep(50);
+			return null;
+		});
+
+		given(firstConsumer.clientInstanceId(any())).willReturn(uuid1);
+		given(secondConsumer.clientInstanceId(any())).willReturn(uuid2);
+
+		ContainerProperties containerProperties = new ContainerProperties("test-topic");
+		containerProperties.setMessageListener(messageListener);
+
+		ShareKafkaMessageListenerContainer<String, String> container =
+				new ShareKafkaMessageListenerContainer<>(this.shareConsumerFactory, containerProperties);
+		container.setBeanName("testContainer");
+		container.setConcurrency(2);
+
+		// Container not running yet: should return empty map
+		assertThat(container.clientInstanceIds(Duration.ofSeconds(1))).isEmpty();
+
+		container.start();
+		try {
+			Map<String, Uuid> ids = container.clientInstanceIds(Duration.ofSeconds(1));
+			assertThat(ids).hasSize(2);
+			assertThat(ids.get("testContainer-0")).isEqualTo(uuid1);
+			assertThat(ids.get("testContainer-1")).isEqualTo(uuid2);
+		}
+		finally {
+			container.stop();
+		}
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void shouldHandleDisabledTelemetryWhenRetrievingClientInstanceIds() {
+		ShareConsumer<String, String> firstConsumer = mock(ShareConsumer.class);
+
+		given(this.shareConsumerFactory.getConfigurationProperties()).willReturn(Map.of());
+		given(this.shareConsumerFactory.createShareConsumer(any(), eq("testContainer"), any()))
+				.willReturn(firstConsumer);
+
+		lenient().when(firstConsumer.poll(any())).thenAnswer(invocation -> {
+			Thread.sleep(50);
+			return null;
+		});
+
+		given(firstConsumer.clientInstanceId(any())).willThrow(new IllegalStateException("Telemetry is not enabled"));
+
+		ContainerProperties containerProperties = new ContainerProperties("test-topic");
+		containerProperties.setMessageListener(messageListener);
+
+		ShareKafkaMessageListenerContainer<String, String> container =
+				new ShareKafkaMessageListenerContainer<>(this.shareConsumerFactory, containerProperties);
+		container.setBeanName("testContainer");
+		container.setConcurrency(1);
+
+		container.start();
+		try {
+			Map<String, Uuid> ids = container.clientInstanceIds(Duration.ofSeconds(1));
+			assertThat(ids).isEmpty();
+		}
+		finally {
+			container.stop();
+		}
+	}
+
 }
+

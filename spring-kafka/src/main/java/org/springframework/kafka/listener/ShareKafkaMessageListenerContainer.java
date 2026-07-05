@@ -16,6 +16,7 @@
 
 package org.springframework.kafka.listener;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -39,6 +40,7 @@ import org.apache.kafka.clients.consumer.internals.ShareAcknowledgementMode;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.RecordDeserializationException;
 import org.jspecify.annotations.Nullable;
@@ -147,6 +149,35 @@ public class ShareKafkaMessageListenerContainer<K, V>
 	}
 
 	/**
+	 * Return the client instance ids for the running share consumers.
+	 * @param timeout the timeout for retrieving the client instance id.
+	 * @return a map of client id to client instance id.
+	 * @since 4.0
+	 */
+	public Map<String, Uuid> clientInstanceIds(Duration timeout) {
+		this.lifecycleLock.lock();
+		try {
+			if (this.consumers.isEmpty()) {
+				return Collections.emptyMap();
+			}
+			Map<String, Uuid> clientInstanceIds = new HashMap<>();
+			for (ShareListenerConsumer consumer : this.consumers) {
+				String consumerClientId = consumer.getClientId();
+				if (consumerClientId != null) {
+					Uuid uuid = consumer.getClientInstanceId(timeout);
+					if (uuid != null) {
+						clientInstanceIds.put(consumerClientId, uuid);
+					}
+				}
+			}
+			return Collections.unmodifiableMap(clientInstanceIds);
+		}
+		finally {
+			this.lifecycleLock.unlock();
+		}
+	}
+
+	/**
 	 * Set the {@code client.id} to use for the consumer.
 	 * @param clientId the client id to set
 	 */
@@ -187,6 +218,10 @@ public class ShareKafkaMessageListenerContainer<K, V>
 				String consumerId = consumer.getClientId();
 				if (consumerId != null) {
 					allMetrics.put(consumerId, consumerMetrics);
+				}
+				Uuid uuid = consumer.getClientInstanceId(Duration.ZERO);
+				if (uuid != null) {
+					allMetrics.put(uuid.toString(), consumerMetrics);
 				}
 			}
 			return Collections.unmodifiableMap(allMetrics);
@@ -361,6 +396,10 @@ public class ShareKafkaMessageListenerContainer<K, V>
 
 		private final @Nullable String clientId;
 
+		private volatile @Nullable Uuid clientInstanceId;
+
+		private volatile boolean telemetryDisabled;
+
 		private final Map<ConsumerRecord<K, V>, ShareConsumerAcknowledgment> pendingAcknowledgments = new ConcurrentHashMap<>();
 
 		// Tracks per-record dispatch time for acknowledgment timeout detection
@@ -447,6 +486,28 @@ public class ShareKafkaMessageListenerContainer<K, V>
 		@Nullable
 		String getClientId() {
 			return this.clientId;
+		}
+
+		@Nullable
+		Uuid getClientInstanceId(Duration timeout) {
+			if (this.clientInstanceId != null) {
+				return this.clientInstanceId;
+			}
+			if (this.telemetryDisabled) {
+				return null;
+			}
+			try {
+				this.clientInstanceId = this.consumer.clientInstanceId(timeout);
+				return this.clientInstanceId;
+			}
+			catch (IllegalStateException e) {
+				this.logger.debug(e, "Telemetry is disabled; clientInstanceId is not available");
+				this.telemetryDisabled = true;
+			}
+			catch (Exception e) {
+				this.logger.warn(e, "Failed to retrieve clientInstanceId");
+			}
+			return null;
 		}
 
 		@Override

@@ -44,6 +44,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -1364,4 +1365,38 @@ class ShareKafkaMessageListenerContainerIntegrationTests {
 
 		container.stop();
 	}
+
+	@Test
+	void shouldRetrieveClientInstanceIdsWithEmbeddedBroker(EmbeddedKafkaBroker broker) throws Exception {
+		final String topic = "share-listener-integration-test";
+		final String groupId = "telemetryTestGroup";
+		String bootstrapServers = broker.getBrokersAsString();
+
+		var consumerProps = new HashMap<String, Object>();
+		consumerProps.put("bootstrap.servers", bootstrapServers);
+		consumerProps.put("key.deserializer", StringDeserializer.class);
+		consumerProps.put("value.deserializer", StringDeserializer.class);
+		consumerProps.put("group.id", groupId);
+
+		DefaultShareConsumerFactory<String, String> consumerFactory = new DefaultShareConsumerFactory<>(consumerProps);
+
+		ContainerProperties containerProps = new ContainerProperties(topic);
+		containerProps.setMessageListener((MessageListener<String, String>) record -> {});
+
+		ShareKafkaMessageListenerContainer<String, String> container =
+				new ShareKafkaMessageListenerContainer<>(consumerFactory, containerProps);
+		container.setBeanName("telemetryTestContainer");
+		container.setConcurrency(2);
+		container.start();
+
+		try {
+			Map<String, Uuid> ids = container.clientInstanceIds(java.time.Duration.ofMillis(100));
+			assertThat(ids).isNotNull();
+		}
+		finally {
+			container.stop();
+		}
+	}
+
 }
+
